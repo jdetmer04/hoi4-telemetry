@@ -1,0 +1,554 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>HOI4 Telemetry Report</title>
+<style>
+:root {
+  color-scheme: light;
+  --page: #f9f9f7; --surface: #fcfcfb;
+  --ink: #0b0b0b; --ink-2: #52514e; --muted: #898781;
+  --grid: #e1e0d9; --axis: #c3c2b7; --border: rgba(11,11,11,0.10);
+  --s1: #2a78d6; --s2: #eb6834; --s3: #1baf7a; --s4: #eda100;
+  --s5: #e87ba4; --s6: #008300; --s7: #6250d6; --s8: #e34948;
+  --other: #b5b3ab;
+}
+@media (prefers-color-scheme: dark) {
+  :root:where(:not([data-theme="light"])) {
+    color-scheme: dark;
+    --page: #0d0d0d; --surface: #1a1a19;
+    --ink: #f0efec; --ink-2: #c3c2b7; --muted: #898781;
+    --grid: #2c2c2a; --axis: #383835; --border: rgba(255,255,255,0.10);
+    --s1: #3987e5; --s2: #d95926; --s3: #199e70; --s4: #c98500;
+    --s5: #d55181; --s6: #008300; --s7: #9085e9; --s8: #e66767;
+    --other: #5f5e59;
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --page: #0d0d0d; --surface: #1a1a19;
+  --ink: #f0efec; --ink-2: #c3c2b7; --muted: #898781;
+  --grid: #2c2c2a; --axis: #383835; --border: rgba(255,255,255,0.10);
+  --s1: #3987e5; --s2: #d95926; --s3: #199e70; --s4: #c98500;
+  --s5: #d55181; --s6: #008300; --s7: #9085e9; --s8: #e66767;
+  --other: #5f5e59;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0; background: var(--page); color: var(--ink);
+  font: 14px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+main { max-width: 1240px; margin: 0 auto; padding: 24px 16px 48px; }
+h1 { font-size: 22px; margin: 0 0 2px; font-weight: 650; }
+h2 { font-size: 16px; margin: 32px 0 10px; font-weight: 650; }
+.sub { color: var(--ink-2); margin: 0; }
+.filters { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin: 12px 0 14px; }
+.filters .label { color: var(--muted); margin-right: 4px; font-size: 13px; }
+.chip {
+  display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px;
+  border: 1px solid var(--border); border-radius: 999px; background: var(--surface);
+  color: var(--ink); font: inherit; font-size: 13px; cursor: pointer;
+}
+.chip[aria-pressed="false"] { color: var(--muted); }
+.chip[aria-pressed="false"] .key { opacity: 0.25; }
+.key { display: inline-block; width: 14px; height: 2px; border-radius: 1px; }
+.key.rect { width: 10px; height: 10px; border-radius: 2px; }
+select {
+  font: inherit; color: var(--ink); background: var(--surface);
+  border: 1px solid var(--border); border-radius: 6px; padding: 4px 8px;
+}
+.grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+.card.wide { grid-column: 1 / -1; }
+.multiples { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px 14px; }
+.mini-title { font-size: 12px; color: var(--ink-2); margin-top: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+@media (max-width: 960px) { .multiples { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+@media (max-width: 760px) {
+  .grid { grid-template-columns: minmax(0, 1fr); }
+  .multiples { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+.card {
+  background: var(--surface); border: 1px solid var(--border); border-radius: 10px;
+  padding: 14px 14px 10px; min-width: 0;
+}
+.card-head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+.card h3 { font-size: 14px; margin: 0; font-weight: 600; }
+.card .note { color: var(--muted); font-size: 12px; margin: 2px 0 6px; }
+.seg { display: inline-flex; border: 1px solid var(--border); border-radius: 6px; overflow: hidden; }
+.seg button {
+  font: inherit; font-size: 12px; border: 0; background: transparent; color: var(--ink-2);
+  padding: 3px 9px; cursor: pointer;
+}
+.seg button[aria-pressed="true"] { background: var(--grid); color: var(--ink); font-weight: 600; }
+.chart { position: relative; }
+.chart svg { display: block; width: 100%; overflow: visible; }
+.chart svg:focus { outline: none; }
+.chart svg:focus-visible { outline: 2px solid var(--s1); outline-offset: 2px; border-radius: 4px; }
+.legend { display: flex; flex-wrap: wrap; gap: 4px 12px; margin: 4px 0 2px; font-size: 12px; color: var(--ink-2); }
+.legend span { display: inline-flex; align-items: center; gap: 5px; }
+.tip {
+  position: absolute; pointer-events: none; z-index: 2; min-width: 120px;
+  background: var(--surface); border: 1px solid var(--border); border-radius: 8px;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.12); padding: 8px 10px; font-size: 12px; display: none;
+}
+.tip .when { color: var(--muted); margin-bottom: 4px; }
+.tip .row { display: flex; align-items: center; gap: 8px; white-space: nowrap; }
+.tip .row b { font-variant-numeric: tabular-nums; min-width: 44px; text-align: right; }
+.tip .row span:last-child { color: var(--ink-2); }
+details { margin-top: 4px; font-size: 12px; }
+summary { color: var(--muted); cursor: pointer; }
+.tablewrap { overflow-x: auto; margin-top: 6px; }
+table { border-collapse: collapse; font-variant-numeric: tabular-nums; }
+th, td { padding: 3px 8px; text-align: right; border-bottom: 1px solid var(--grid); white-space: nowrap; }
+th:first-child, td:first-child { text-align: left; }
+th { color: var(--ink-2); font-weight: 600; }
+.subhead { font-size: 13px; font-weight: 600; color: var(--ink-2); text-transform: uppercase; letter-spacing: 0.04em; margin: 22px 0 8px; }
+.card table { font-size: 12px; }
+.card td.text, .card th.text { text-align: left; }
+.gov { margin: 4px 0 0; padding: 0; list-style: none; font-size: 13px; }
+.gov li { display: flex; gap: 10px; padding: 3px 0; border-bottom: 1px solid var(--grid); }
+.gov li:last-child { border-bottom: 0; }
+.gov .when { color: var(--muted); min-width: 64px; font-variant-numeric: tabular-nums; }
+text { font: 11px system-ui, -apple-system, "Segoe UI", sans-serif; fill: var(--muted); }
+</style>
+</head>
+<body>
+<main>
+  <h1 id="title">HOI4 telemetry</h1>
+  <p class="sub" id="subtitle"></p>
+
+  <h2>Major powers</h2>
+  <div class="filters" id="nation-filter"><span class="label">Nations</span></div>
+  <div id="overview"></div>
+
+  <h2>Country detail</h2>
+  <div class="filters">
+    <label class="label" for="country">Country</label>
+    <select id="country"></select>
+  </div>
+  <div class="grid" id="detail"></div>
+</main>
+
+<script>
+const D = /*DATA*/null;
+
+const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+const dateLabel = d => { const [y, m] = d.split('.'); return `${MONTHS[+m - 1]} ${y}`; };
+// Theme tokens, cached per redraw (a chart reads them per gridline and mark).
+let cssCache = new Map();
+const css = name => {
+  if (!cssCache.has(name)) cssCache.set(name, getComputedStyle(document.documentElement).getPropertyValue(name).trim());
+  return cssCache.get(name);
+};
+const fmt = v => {
+  if (v == null) return '–';
+  const a = Math.abs(v);
+  if (a >= 1e6) return (v / 1e6).toFixed(a >= 1e7 ? 0 : 1).replace(/\.0$/, '') + 'M';
+  if (a >= 1e4) return Math.round(v / 1e3) + 'k';
+  if (a >= 1e3) return (v / 1e3).toFixed(1).replace(/\.0$/, '') + 'k';
+  return Math.round(v).toString();
+};
+const pretty = s => s === 'Other' ? 'Other' : s.replace(/_/g, ' ');
+const SVG = 'http://www.w3.org/2000/svg';
+function el(tag, attrs = {}, parent) {
+  const n = tag === 'svg' || ['path','line','rect','text','g'].includes(tag)
+    ? document.createElementNS(SVG, tag) : document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs)) n.setAttribute(k, v);
+  if (parent) parent.appendChild(n);
+  return n;
+}
+// Round tick step (1/2/2.5/5 × 10^n) giving about 4 gridlines.
+function niceTicks(v, target = 4) {
+  if (!(v > 0)) return { step: 1, count: 1 };
+  const raw = v / target, p = Math.pow(10, Math.floor(Math.log10(raw))), f = raw / p;
+  const step = (f <= 1 ? 1 : f <= 2 ? 2 : f <= 2.5 ? 2.5 : f <= 5 ? 5 : 10) * p;
+  return { step, count: Math.ceil(v / step) };
+}
+
+// Shared chart frame: axes, grid, crosshair + tooltip with keyboard support.
+// `rowsAt(i)` returns [{label, color, value, rect}] for the tooltip at index i.
+function frame(container, yMax, rowsAt, draw, opts = {}) {
+  container.textContent = '';
+  const W = Math.max(opts.minW || 280, container.clientWidth), H = opts.H || 230;
+  const m = { l: opts.H ? 34 : 44, r: 10, t: 8, b: 22 };
+  const t = D.t, x0 = t[0], x1 = t[t.length - 1];
+  const X = v => m.l + (v - x0) / (x1 - x0 || 1) * (W - m.l - m.r);
+  // the axis always includes 0; it extends below only when the data does (e.g. stability)
+  const lo = Math.min(0, opts.yMin ?? 0), hi = opts.fixedMax ? yMax : yMax * 1.02;
+  const { step: ys } = niceTicks(hi - lo, opts.ticks || 4);
+  const bottom = Math.floor(lo / ys) * ys, top = Math.max(ys, Math.ceil(hi / ys) * ys);
+  const count = Math.round((top - bottom) / ys);
+  const Y = v => H - m.b - (v - bottom) / (top - bottom) * (H - m.t - m.b);
+  const svg = el('svg', { viewBox: `0 0 ${W} ${H}`, height: H, tabindex: 0, role: 'img' }, container);
+  for (let k = 0; k <= count; k++) {
+    const v = bottom + ys * k, y = Y(v);
+    el('line', { x1: m.l, x2: W - m.r, y1: y, y2: y, stroke: Math.abs(v) < ys / 2 ? css('--axis') : css('--grid'), 'stroke-width': 1 }, svg);
+    el('text', { x: m.l - 6, y: y + 4, 'text-anchor': 'end' }, svg).textContent = fmt(v);
+  }
+  const step = W < 300 ? 3 : W < 480 ? 2 : 1;
+  for (let y = Math.ceil(x0); y <= Math.floor(x1); y += step) {
+    el('text', { x: X(y), y: H - 6, 'text-anchor': 'middle' }, svg).textContent = y;
+  }
+  draw(svg, X, Y);
+
+  const cross = el('line', { y1: m.t, y2: H - m.b, stroke: css('--axis'), 'stroke-width': 1, visibility: 'hidden' }, svg);
+  const tip = el('div', { class: 'tip' }, container);
+  let cur = -1;
+  const show = i => {
+    cur = Math.max(0, Math.min(t.length - 1, i));
+    const cx = X(t[cur]);
+    cross.setAttribute('x1', cx); cross.setAttribute('x2', cx); cross.setAttribute('visibility', 'visible');
+    tip.textContent = '';
+    el('div', { class: 'when' }, tip).textContent = dateLabel(D.dates[cur]);
+    for (const r of rowsAt(cur)) {
+      const row = el('div', { class: 'row' }, tip);
+      el('span', { class: 'key' + (r.rect ? ' rect' : ''), style: `background:${r.color}` }, row);
+      el('b', {}, row).textContent = fmt(r.value);
+      el('span', {}, row).textContent = r.label;
+    }
+    tip.style.display = 'block';
+    const pw = container.clientWidth, tw = tip.offsetWidth;
+    const px = cx / W * pw;
+    tip.style.left = (px + 12 + tw > pw ? Math.max(0, px - 12 - tw) : px + 12) + 'px';
+    tip.style.top = '4px';
+  };
+  const hide = () => { cross.setAttribute('visibility', 'hidden'); tip.style.display = 'none'; cur = -1; };
+  const hit = el('rect', { x: m.l, y: 0, width: W - m.l - m.r, height: H, fill: 'transparent' }, svg);
+  hit.addEventListener('pointermove', e => {
+    const r = svg.getBoundingClientRect();
+    const v = x0 + ((e.clientX - r.left) / r.width * W - m.l) / (W - m.l - m.r) * (x1 - x0);
+    let best = 0;
+    for (let i = 1; i < t.length; i++) if (Math.abs(t[i] - v) < Math.abs(t[best] - v)) best = i;
+    show(best);
+  });
+  hit.addEventListener('pointerleave', hide);
+  svg.addEventListener('keydown', e => {
+    if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') {
+      e.preventDefault();
+      show((cur < 0 ? t.length - 1 : cur) + (e.key === 'ArrowRight' ? 1 : -1));
+    } else if (e.key === 'Escape') hide();
+  });
+  svg.addEventListener('blur', hide);
+}
+
+function lineChart(container, series, opts = {}) {
+  const vals = series.flatMap(s => s.values.filter(v => v != null));
+  const yMax = opts.yMax ?? Math.max(0, ...vals);
+  opts = { ...opts, yMin: Math.min(0, ...vals) };
+  frame(container, yMax,
+    i => series.map(s => ({ label: s.label, color: s.color, value: s.values[i] }))
+               .filter(r => r.value != null).sort((a, b) => b.value - a.value),
+    (svg, X, Y) => {
+      for (const s of series) {
+        let d = '', pen = false;
+        s.values.forEach((v, i) => {
+          if (v == null) { pen = false; return; }
+          d += (pen ? 'L' : 'M') + X(D.t[i]).toFixed(1) + ',' + Y(v).toFixed(1);
+          pen = true;
+        });
+        el('path', { d, fill: 'none', stroke: s.color, 'stroke-width': 2,
+                     'stroke-linejoin': 'round', 'stroke-linecap': 'round' }, svg);
+      }
+    }, opts);
+}
+
+function stackChart(container, layers) {
+  const n = D.t.length, base = new Array(n).fill(0);
+  const stacks = layers.map(l => {
+    const lo = base.slice();
+    l.values.forEach((v, i) => { base[i] += v || 0; });
+    return { ...l, lo, hi: base.slice() };
+  });
+  frame(container, Math.max(...base),
+    i => stacks.slice().reverse().filter(s => s.values[i])
+               .map(s => ({ label: s.label, color: s.color, value: s.values[i], rect: true })),
+    (svg, X, Y) => {
+      for (const s of stacks) {
+        let d = '';
+        for (let i = 0; i < n; i++) d += (i ? 'L' : 'M') + X(D.t[i]).toFixed(1) + ',' + Y(s.hi[i]).toFixed(1);
+        for (let i = n - 1; i >= 0; i--) d += 'L' + X(D.t[i]).toFixed(1) + ',' + Y(s.lo[i]).toFixed(1);
+        // surface-colored edge = the 2px gap between stacked fills
+        el('path', { d: d + 'Z', fill: s.color, stroke: css('--surface'), 'stroke-width': 1,
+                     'stroke-linejoin': 'round' }, svg);
+      }
+    });
+}
+
+// Data table (the non-hover, non-color route to every value): first snapshot of each year + last.
+function tableView(card, series) {
+  const det = el('details', {}, card);
+  el('summary', {}, det).textContent = 'Table';
+  det.addEventListener('toggle', () => {
+    if (!det.open || det.querySelector('table')) return;
+    const rows = [];
+    D.dates.forEach((d, i) => { if (!i || d.slice(0, 4) !== D.dates[i - 1].slice(0, 4)) rows.push(i); });
+    if (rows[rows.length - 1] !== D.dates.length - 1) rows.push(D.dates.length - 1);
+    dataTable(det, ['Date', ...series.map(s => s.label)], rows.map(i => [dateLabel(D.dates[i]),
+      ...series.map(s => s.values[i] == null ? '–' : Math.round(s.values[i]).toLocaleString())]));
+  });
+}
+
+function card(parent, title, note) {
+  const c = el('div', { class: 'card' }, parent);
+  const head = el('div', { class: 'card-head' }, c);
+  el('h3', {}, head).textContent = title;
+  el('p', { class: 'note' }, c).textContent = note;
+  return { card: c, head, chart: el('div', { class: 'chart' }, c) };
+}
+
+// ---------- overview ----------
+const nationColor = {};
+D.featured.forEach((tag, i) => { nationColor[tag] = `--s${i + 1}`; });
+const visible = new Set(D.featured);
+const label = tag => (D.labels && D.labels[tag]) || tag;
+const fullName = tag => D.names && D.names[tag] ? `${label(tag)} · ${D.names[tag]}` : label(tag);
+
+const catViews = (prefix, cats) => (cats || []).map(c => [`${prefix}:${c}`, pretty(c)]);
+const OVERVIEW = [
+  { section: 'Industry', title: 'Equipment produced', views: catViews('produced', D.produced_categories), wide: true,
+    note: 'Running total since game start, by the game’s own equipment categories; a tag switch restarts at 0' },
+  { title: 'Factories', note: 'Factories in controlled states',
+    views: [['factories', 'Total'], ['civ_factories', 'Civilian'], ['mil_factories', 'Military'], ['naval_factories', 'Naval']] },
+  { title: 'Buildings constructed', views: catViews('constructed', D.constructed_categories),
+    note: 'Running total of building levels completed since game start' },
+  { title: 'Idle military factories', note: 'Military factories not assigned to any production line', metric: 'idle_mil' },
+  { title: 'Damaged factories', note: 'Factory levels out of action from bombing or fighting, all three types', metric: 'damaged' },
+  { section: 'Military', title: 'Divisions', note: 'Deployed divisions, not counting those in training', metric: 'divisions' },
+  { title: 'Manpower pool', note: 'Available manpower, summed over controlled states', metric: 'manpower' },
+  { title: 'Planes', note: 'Aircraft in air wings, excluding the stockpile', metric: 'planes' },
+  { title: 'Ships', note: 'Ships in fleets, all classes', metric: 'ships' },
+  { title: 'Casualties', note: 'Cumulative losses across all wars, ended wars included', metric: 'casualties' },
+  { title: 'Convoys sunk', note: 'Convoys this nation has sunk (the save’s own running counter)', metric: 'convoys_destroyed' },
+  { custom: drawWars },
+  { section: 'Politics, research & supply', title: 'Stability', metric: 'stability', percent: true,
+    note: 'Percent; stability can go negative, e.g. on the way to a civil war' },
+  { title: 'War support', note: 'Percent', metric: 'war_support', percent: true },
+  { title: 'Technologies researched', note: 'Count of completed technologies', metric: 'techs' },
+  { title: 'Fuel reserve', note: 'Fuel in storage', metric: 'fuel' },
+  { custom: drawGovernments },
+];
+const charts = [];
+const nationSeries = metric => D.featured.filter(t => visible.has(t)).map(tag => ({
+  label: label(tag), color: css(nationColor[tag]), values: (D.overview[metric] || {})[tag] || [] }));
+
+// Plain table for non-time-series data; `text` marks left-aligned columns.
+function dataTable(parent, headers, rows, text = [0]) {
+  const wrap = el('div', { class: 'tablewrap' }, parent), table = el('table', {}, wrap);
+  const hr = el('tr', {}, el('thead', {}, table));
+  headers.forEach((h, j) => { el('th', text.includes(j) ? { class: 'text' } : {}, hr).textContent = h; });
+  const tb = el('tbody', {}, table);
+  for (const r of rows) {
+    const tr = el('tr', {}, tb);
+    r.forEach((v, j) => { el('td', text.includes(j) ? { class: 'text' } : {}, tr).textContent = v; });
+  }
+}
+
+function drawWars(grid) {
+  const c = card(grid, 'Bloodiest wars', 'Losses suffered by each side, final totals for ended wars (up to a month of losses before each peace is missing)');
+  c.card.classList.add('wide');
+  dataTable(c.chart, ['Side A', 'Side B', 'Started', 'Status', 'A lost', 'B lost', 'A : B'],
+    D.wars.map(([a, b, start, last, la, lb, ongoing]) => [
+      fullName(a), fullName(b), dateLabel(start), ongoing ? 'Ongoing' : `Ended by ${dateLabel(last)}`,
+      la.toLocaleString(), lb.toLocaleString(), lb ? (la / lb).toFixed(2) : '–']), [0, 1, 2, 3]);
+}
+
+const govText = tag => (D.government[tag] || []).map(([d, p]) => `${dateLabel(d)} ${pretty(p)}`).join('  →  ');
+function drawGovernments(grid) {
+  const c = card(grid, 'Ruling party', 'At the first snapshot and at every change');
+  c.card.classList.add('wide');
+  dataTable(c.chart, ['Nation', 'History'], D.featured.map(t => [fullName(t), govText(t) || '–']), [0, 1]);
+}
+
+function buildOverview() {
+  const root = document.getElementById('overview');
+  let grid;
+  for (const spec of OVERVIEW) {
+    if (spec.section) {
+      el('div', { class: 'subhead' }, root).textContent = spec.section;
+      grid = el('div', { class: 'grid' }, root);
+    }
+    if (spec.custom) { spec.custom(grid); continue; }
+    if (spec.views && !spec.views.length) continue;   // e.g. a db without report totals
+    const c = card(grid, spec.title, spec.note);
+    if (spec.wide) c.card.classList.add('wide');
+    let metric = spec.metric || spec.views[0][0];
+    if (spec.views && spec.views.length > 4) {
+      const sel = el('select', { 'aria-label': `${spec.title}: category` }, c.head);
+      for (const [key, name] of spec.views) el('option', { value: key }, sel).textContent = name;
+      sel.addEventListener('change', () => { metric = sel.value; draw(); refreshTable(); });
+    } else if (spec.views) {
+      const seg = el('div', { class: 'seg', role: 'group', 'aria-label': `${spec.title}: type` }, c.head);
+      for (const [key, name] of spec.views) {
+        const b = el('button', { 'aria-pressed': key === metric }, seg);
+        b.textContent = name;
+        b.addEventListener('click', () => {
+          metric = key;
+          seg.querySelectorAll('button').forEach(x => x.setAttribute('aria-pressed', x === b));
+          draw(); refreshTable();
+        });
+      }
+    }
+    const draw = () => lineChart(c.chart, nationSeries(metric), spec.percent ? { yMax: 100, fixedMax: true } : {});
+    let tableHost = el('div', {}, c.card);
+    const refreshTable = () => { tableHost.textContent = ''; tableView(tableHost, nationSeries(metric)); };
+    charts.push(() => { draw(); refreshTable(); });
+  }
+  const filter = document.getElementById('nation-filter');
+  for (const tag of D.featured) {
+    const b = el('button', { class: 'chip', 'aria-pressed': 'true', title: fullName(tag) }, filter);
+    el('span', { class: 'key', style: `background:var(${nationColor[tag]})` }, b);
+    b.appendChild(document.createTextNode(label(tag)));
+    b.addEventListener('click', () => {
+      visible.has(tag) ? visible.delete(tag) : visible.add(tag);
+      b.setAttribute('aria-pressed', visible.has(tag));
+      redraw();
+    });
+  }
+}
+
+// ---------- country detail ----------
+const nothing = c => { el('p', { class: 'note' }, c.chart).textContent = 'Nothing recorded for this country.'; };
+
+// Small multiples of [[name, values], ...]; shared y scale unless opts.shared is false.
+function drawMultiples(grid, title, note, items, opts = {}) {
+  const c = card(grid, title, note);
+  c.card.classList.add('wide');
+  if (!items.length) return nothing(c);
+  const yMax = opts.shared === false ? undefined : Math.max(...items.flatMap(([, v]) => v));
+  const sub = el('div', { class: 'multiples' }, c.chart);
+  const series = items.map(([f, values]) => ({ label: pretty(f), color: css('--s1'), values }));
+  for (const s of series) {
+    const cell = el('div', {}, sub);
+    el('div', { class: 'mini-title' }, cell).textContent = s.label;
+    lineChart(el('div', { class: 'chart' }, cell), [s], { yMax, H: 110, ticks: 2, minW: 160 });
+  }
+  tableView(c.card, series);
+}
+
+function legendRow(c, items, rect) {
+  const legend = el('div', { class: 'legend' }, c.card);
+  c.card.insertBefore(legend, c.chart);
+  for (const l of items) {
+    const s = el('span', {}, legend);
+    el('span', { class: 'key' + (rect ? ' rect' : ''), style: `background:${l.color}` }, s);
+    s.appendChild(document.createTextNode(l.label));
+  }
+}
+
+const STACKS = [
+  ['allocation', 'Factory allocation', 'Military factories on lines, by equipment family'],
+  ['planes', 'Air force by role', 'Aircraft in air wings, by wing type'],
+  ['ships', 'Navy by role', 'Ships in fleets, by class'],
+];
+function catColor(order, cat) {
+  return cat === 'Other' ? css('--other') : css(`--s${order.indexOf(cat) + 1}`);
+}
+function drawStack(grid, tag, [key, title, note]) {
+  const { order, data } = D.stacks[key];
+  const d = data[tag] || {};
+  const layers = order.filter(cat => d[cat] && d[cat].some(v => v))
+    .map(cat => ({ label: pretty(cat), color: catColor(order, cat), values: d[cat] }));
+  const c = card(grid, `${title} · ${label(tag)}`, note);
+  if (!layers.length) return nothing(c);
+  legendRow(c, layers, true);
+  stackChart(c.chart, layers);
+  tableView(c.card, layers);
+}
+
+function drawIndustry(grid, tag) {
+  const d = D.industry[tag];
+  const c = card(grid, `Military industry · ${label(tag)}`,
+    'Factories assigned to lines, and those on lines short of resources');
+  if (!d) return nothing(c);
+  const series = [['mil', 'Military factories', '--s1'], ['assigned', 'Assigned to a line', '--s2'],
+                  ['starved', 'Short of resources', '--s3']]
+    .map(([k, name, col]) => ({ label: name, color: css(col), values: d[k] }));
+  legendRow(c, series);
+  lineChart(c.chart, series);
+  tableView(c.card, series);
+}
+
+let resFlow = 'produced';
+function drawResources(grid, tag) {
+  const d = (D.resources.data || {})[tag];
+  const c = card(grid, `Resources · ${label(tag)}`, 'Units per day at each snapshot');
+  if (!d) return nothing(c);
+  const seg = el('div', { class: 'seg', role: 'group', 'aria-label': 'Resource flow' }, c.head);
+  const order = D.resources.order;
+  const draw = () => {
+    c.chart.textContent = '';
+    c.card.querySelectorAll('.legend, details').forEach(n => n.remove());
+    const series = order.filter(r => d[resFlow][r] && d[resFlow][r].some(v => v))
+      .map(r => ({ label: pretty(r), color: css(`--s${order.indexOf(r) + 1}`), values: d[resFlow][r] }));
+    if (!series.length) { el('p', { class: 'note' }, c.chart).textContent = `Nothing ${resFlow}.`; return; }
+    legendRow(c, series);
+    lineChart(c.chart, series);
+    tableView(c.card, series);
+  };
+  for (const f of ['produced', 'imported', 'exported']) {
+    const b = el('button', { 'aria-pressed': f === resFlow }, seg);
+    b.textContent = f[0].toUpperCase() + f.slice(1);
+    b.addEventListener('click', () => {
+      resFlow = f;
+      seg.querySelectorAll('button').forEach(x => x.setAttribute('aria-pressed', x === b));
+      draw();
+    });
+  }
+  draw();
+}
+
+function drawForeign(grid, tag) {
+  const rows = D.foreign[tag] || [];
+  const c = card(grid, `Foreign designs in service · ${label(tag)}`,
+    'Stockpile, air wings and ships designed by another country (captured, licensed or bought), at the last snapshot');
+  c.card.classList.add('wide');
+  if (!rows.length) { el('p', { class: 'note' }, c.chart).textContent = 'None: everything in service is a home design.'; return; }
+  dataTable(c.chart, ['Designer', 'Equipment', 'Amount'],
+    rows.map(([who, fam, n]) => [fullName(who), pretty(fam), n.toLocaleString()]), [0, 1]);
+}
+
+function drawGovernment(grid, tag) {
+  const c = card(grid, `Ruling party · ${label(tag)}`, 'At the first snapshot and at every change');
+  const hist = D.government[tag] || [];
+  if (!hist.length) return nothing(c);
+  const ul = el('ul', { class: 'gov' }, c.chart);
+  for (const [d, p] of hist) {
+    const li = el('li', {}, ul);
+    el('span', { class: 'when' }, li).textContent = dateLabel(d);
+    el('span', {}, li).textContent = pretty(p);
+  }
+}
+
+function drawDetail() {
+  const tag = document.getElementById('country').value;
+  const grid = document.getElementById('detail');
+  grid.textContent = '';
+  drawMultiples(grid, `Production · ${label(tag)}`,
+    `Active factories per equipment family, top ${(D.production[tag] || []).length}, shared scale`,
+    D.production[tag] || []);
+  drawIndustry(grid, tag);
+  for (const s of STACKS) drawStack(grid, tag, s);
+  drawResources(grid, tag);
+  drawGovernment(grid, tag);
+  drawMultiples(grid, `Stockpile · ${label(tag)}`,
+    'Equipment in storage per family, biggest at the last snapshot; each panel has its own scale',
+    D.stockpile[tag] || [], { shared: false });
+  drawForeign(grid, tag);
+}
+
+function redraw() { cssCache = new Map(); charts.forEach(f => f()); drawDetail(); }
+
+document.getElementById('title').textContent = `HOI4 telemetry · ${D.run}`;
+document.getElementById('subtitle').textContent =
+  `${dateLabel(D.dates[0])} – ${dateLabel(D.dates[D.dates.length - 1])} · ${D.dates.length} snapshots`;
+const sel = document.getElementById('country');
+for (const tag of D.detail) el('option', { value: tag }, sel).textContent = fullName(tag);
+sel.addEventListener('change', drawDetail);
+buildOverview();
+redraw();
+let rt;
+window.addEventListener('resize', () => { clearTimeout(rt); rt = setTimeout(redraw, 150); });
+matchMedia('(prefers-color-scheme: dark)').addEventListener('change', redraw);
+</script>
+</body>
+</html>

@@ -1,0 +1,12 @@
+# recorded runs: snapshots, databases and generated reports/comparisons (GBs)
+archive/
+# raw sample saves
+sample/
+# generated output elsewhere
+report.html
+compare*.html
+!compare_template.html
+# Python
+.venv/
+__pycache__/
+*.pyc

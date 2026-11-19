@@ -1,0 +1,164 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Run comparison</title>
+<style>
+:root {
+  --page: #f9f9f7; --surface: #fcfcfb;
+  --ink: #0b0b0b; --ink-2: #52514e; --muted: #898781;
+  --grid: #e1e0d9; --axis: #c3c2b7; --border: rgba(11,11,11,0.10);
+  --s1: #2a78d6; --s2: #eb6834; --s3: #1baf7a; --s4: #eda100;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --page: #0d0d0d; --surface: #1a1a19;
+    --ink: #f0efec; --ink-2: #c3c2b7; --muted: #898781;
+    --grid: #2c2c2a; --axis: #383835; --border: rgba(255,255,255,0.10);
+    --s1: #3987e5; --s2: #d95926; --s3: #199e70; --s4: #c98500;
+  }
+}
+body { margin: 0; background: var(--page); color: var(--ink);
+  font: 14px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; }
+main { max-width: 1100px; margin: 0 auto; padding: 24px 16px 48px; }
+h1 { font-size: 22px; margin: 0 0 4px; }
+.sub { color: var(--ink-2); margin: 0 0 12px; }
+.legend { display: flex; flex-wrap: wrap; gap: 4px 16px; margin: 8px 0 16px; }
+.legend span { display: inline-flex; align-items: center; gap: 6px; }
+.legend i { width: 18px; height: 3px; border-radius: 2px; display: inline-block; }
+.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 12px; }
+.card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; }
+.card h2 { font-size: 14px; margin: 0; }
+.card .note { color: var(--muted); font-size: 12px; margin: 0 0 4px; min-height: 16px; }
+.subhead { font-size: 13px; font-weight: 600; color: var(--ink-2); text-transform: uppercase;
+  letter-spacing: 0.04em; margin: 24px 0 8px; }
+table { border-collapse: collapse; width: 100%; font-variant-numeric: tabular-nums; }
+th, td { padding: 3px 8px; text-align: right; border-bottom: 1px solid var(--grid); white-space: nowrap; }
+th:first-child, td:first-child { text-align: left; }
+th { color: var(--ink-2); font-weight: 600; }
+.tablewrap { overflow-x: auto; background: var(--surface); border: 1px solid var(--border);
+  border-radius: 10px; padding: 4px 8px; }
+svg { display: block; width: 100%; height: auto; }
+text { font: 11px system-ui, sans-serif; fill: var(--muted); }
+.tip { position: fixed; pointer-events: none; display: none; z-index: 5; font-size: 12px;
+  background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 6px 10px; }
+.tip .when { color: var(--muted); margin-bottom: 2px; }
+.tip .row { display: flex; gap: 12px; justify-content: space-between; }
+</style>
+</head>
+<body>
+<main>
+  <h1 id="title"></h1>
+  <p class="sub" id="sub"></p>
+  <div class="legend" id="legend"></div>
+  <div class="subhead">Snapshot at key dates</div>
+  <div class="tablewrap"><table id="tbl"></table></div>
+  <div class="subhead">Over time</div>
+  <div class="grid" id="grid"></div>
+</main>
+<div class="tip" id="tip"></div>
+<script>
+const D = /*DATA*/null;
+const COLORS = ['--s1', '--s2', '--s3', '--s4'];
+const css = v => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
+const NS = 'http://www.w3.org/2000/svg';
+function el(tag, attrs, parent) {
+  const e = document.createElementNS(NS, tag);
+  for (const k in attrs) e.setAttribute(k, attrs[k]);
+  if (parent) parent.appendChild(e);
+  return e;
+}
+const fmt = v => v == null ? '–' : Math.abs(v) >= 1e6 ? (v / 1e6).toFixed(2) + 'M'
+  : Math.abs(v) >= 1e4 ? (v / 1e3).toFixed(0) + 'k' : Math.abs(v) < 10 ? (+v.toFixed(2)).toString() : Math.round(v).toString();
+const when = t => { const y = Math.floor(t + 1e-6), m = Math.round((t - y) * 12) + 1; return y + '-' + String(m).padStart(2, '0'); };
+
+document.getElementById('title').textContent = D.tag + ' across runs';
+document.getElementById('sub').textContent =
+  'Same country, same in-game dates, up to ' + D.until + '. Hover a chart to read all runs at that month.';
+document.getElementById('legend').innerHTML = D.runs.map((r, i) =>
+  `<span><i style="background:var(${COLORS[i]})"></i>${r.name}</span>`).join('');
+
+// value of a run's series at the snapshot nearest to year-time t
+function at(run, key, t) {
+  let best = -1, bd = 0.05;
+  run.t.forEach((x, i) => { const d = Math.abs(x - t); if (d < bd) { bd = d; best = i; } });
+  return best < 0 ? null : run.m[key][best];
+}
+
+// table
+(function () {
+  const dates = [[1939, 9, '1939-09'], [1940, 6, '1940-06'], [1941, 6, '1941-06'], [1942, 6, '1942-06'], [1943, 5, '1943-05'], [1944, 5, '1944-05']];
+  const rows = ['civ', 'mil', 'naval', 'manpower', 'divisions', 'techs', 'cas_lost', 'cas_dealt', 'cas_ratio', 'sunk', 'subs', 'surface', 'fighters', 'bombers', 'p_inf', 'p_armor', 'p_motor', 'p_air'];
+  const title = Object.fromEntries(D.charts.map(c => [c[0], c[1]]));
+  let h = '<tr><th>Metric</th><th>Date</th>' + D.runs.map(r => `<th>${r.name}</th>`).join('') + '</tr>';
+  rows.forEach(k => dates.forEach(([y, m, label], j) => {
+    const t = y + (m - 1) / 12;
+    h += `<tr><td>${j ? '' : title[k]}</td><td>${label}</td>` +
+      D.runs.map(r => `<td>${fmt(at(r, k, t))}</td>`).join('') + '</tr>';
+  }));
+  document.getElementById('tbl').innerHTML = h;
+})();
+
+const charts = [];
+function drawChart(host, key) {
+  host.innerHTML = '';
+  const W = 360, H = 190, m = { l: 44, r: 10, t: 8, b: 20 };
+  const svg = el('svg', { viewBox: `0 0 ${W} ${H}` }, host);
+  let x0 = Infinity, x1 = -Infinity, y1 = 0, y0 = 0;
+  D.runs.forEach(r => r.t.forEach((t, i) => {
+    const v = r.m[key][i];
+    x0 = Math.min(x0, t); x1 = Math.max(x1, t);
+    if (v != null) { y1 = Math.max(y1, v); y0 = Math.min(y0, v); }
+  }));
+  if (y1 === y0) y1 = y0 + 1;
+  const step = Math.pow(10, Math.floor(Math.log10((y1 - y0) / 4))) ;
+  const nice = [1, 2, 2.5, 5, 10].map(f => f * step).find(s => (y1 - y0) / s <= 5);
+  const top = Math.ceil(y1 / nice) * nice, bot = Math.floor(y0 / nice) * nice;
+  const X = t => m.l + (t - x0) / (x1 - x0) * (W - m.l - m.r);
+  const Y = v => H - m.b - (v - bot) / (top - bot) * (H - m.t - m.b);
+  for (let v = bot; v <= top + 1e-9; v += nice) {
+    el('line', { x1: m.l, x2: W - m.r, y1: Y(v), y2: Y(v), stroke: css(v === 0 ? '--axis' : '--grid') }, svg);
+    el('text', { x: m.l - 5, y: Y(v) + 4, 'text-anchor': 'end' }, svg).textContent = fmt(v);
+  }
+  for (let y = Math.ceil(x0); y <= x1; y++) {
+    el('text', { x: X(y), y: H - 5, 'text-anchor': 'middle' }, svg).textContent = y;
+  }
+  D.runs.forEach((r, i) => {
+    let d = '';
+    r.t.forEach((t, j) => {
+      const v = r.m[key][j];
+      if (v == null) return;
+      d += (d ? 'L' : 'M') + X(t).toFixed(1) + ',' + Y(v).toFixed(1);
+    });
+    el('path', { d, fill: 'none', stroke: css(COLORS[i]), 'stroke-width': 1.8, 'stroke-linejoin': 'round' }, svg);
+  });
+  const cross = el('line', { y1: m.t, y2: H - m.b, stroke: css('--axis'), visibility: 'hidden' }, svg);
+  const tip = document.getElementById('tip');
+  svg.addEventListener('mousemove', e => {
+    const b = svg.getBoundingClientRect();
+    const t = x0 + ((e.clientX - b.left) / b.width * W - m.l) / (W - m.l - m.r) * (x1 - x0);
+    if (t < x0 || t > x1) return;
+    const tt = Math.round(t * 12) / 12;
+    cross.setAttribute('x1', X(tt)); cross.setAttribute('x2', X(tt)); cross.setAttribute('visibility', 'visible');
+    tip.style.display = 'block';
+    tip.style.left = Math.min(e.clientX + 14, innerWidth - 220) + 'px';
+    tip.style.top = (e.clientY + 14) + 'px';
+    tip.innerHTML = `<div class="when">${when(tt)}</div>` + D.runs.map((r, i) =>
+      `<div class="row"><span style="color:var(${COLORS[i]})">${r.name}</span><span>${fmt(at(r, key, tt))}</span></div>`).join('');
+  });
+  svg.addEventListener('mouseleave', () => { cross.setAttribute('visibility', 'hidden'); tip.style.display = 'none'; });
+}
+const grid = document.getElementById('grid');
+D.charts.forEach(([key, title, note]) => {
+  const c = document.createElement('div'); c.className = 'card';
+  c.innerHTML = `<h2>${title}</h2><p class="note">${note || ''}</p>`;
+  const host = document.createElement('div'); c.appendChild(host); grid.appendChild(c);
+  charts.push(() => drawChart(host, key));
+});
+const redraw = () => charts.forEach(f => f());
+redraw();
+matchMedia('(prefers-color-scheme: dark)').addEventListener('change', redraw);
+</script>
+</body>
+</html>
